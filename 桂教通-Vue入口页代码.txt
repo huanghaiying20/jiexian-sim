@@ -1,0 +1,177 @@
+# 桂教通 Vue 入口页代码
+
+> 直接复制下面代码到桂教通「自定义页面」里新建的 Vue 页面中即可。
+> 已默认填好本机 file:// 路径，一般不用改；只有你自己的目录位置和这里不同时才需要换。
+
+```vue
+<template>
+  <div class="sim-entry">
+    <div class="sim-banner">
+      <h1 class="sim-title">电路接线模拟</h1>
+      <p class="sim-subtitle">交互式电气控制接线练习</p>
+    </div>
+
+    <div class="sim-content">
+      <div class="sim-card-row">
+        <div class="sim-card">
+          <div class="sim-card-title">元件配置</div>
+          <div class="sim-card-desc">6 类电气元件：漏电保护开关、开关电源、继电器、传感器、蜂鸣器、接线端子排，拖拽即用</div>
+        </div>
+        <div class="sim-card">
+          <div class="sim-card-title">连线校验</div>
+          <div class="sim-card-desc">按工业接线规范实时校验，支持折线节点编辑、撤销、删除、重置</div>
+        </div>
+        <div class="sim-card">
+          <div class="sim-card-title">提交反馈</div>
+          <div class="sim-card-desc">提交后展示得分，配音响应效与烟花动效，强化记忆点</div>
+        </div>
+      </div>
+
+      <div class="sim-action">
+        <a-button type="primary" size="large" class="sim-start-btn" @click="openSimulator">
+          开始接线练习
+        </a-button>
+        <div class="sim-tip">点击按钮将在新窗口打开仿真页面</div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { Button } from 'ant-design-vue';
+
+// ★★★ 本机仿真页路径（file:// 协议，直接在电脑上打开，无需部署到外网）★★★
+const simulatorUrl = ref('file:///D:/code/guijiaotong/%E6%8E%A5%E7%BA%BF%E6%A8%A1%E6%8B%9F/index.html');
+
+const openSimulator = function () {
+  window.open(simulatorUrl.value, '_blank');
+};
+</script>
+
+<style scoped>
+.sim-entry {
+  min-height: 100vh;
+  background: #f5f7fa;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.sim-banner {
+  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
+  color: #ffffff;
+  padding: 56px 40px 96px;
+  text-align: center;
+}
+
+.sim-title {
+  font-size: 36px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  letter-spacing: 2px;
+}
+
+.sim-subtitle {
+  font-size: 16px;
+  margin: 0;
+  opacity: 0.9;
+}
+
+.sim-content {
+  max-width: 1200px;
+  margin: -60px auto 0;
+  padding: 0 24px 60px;
+  position: relative;
+  z-index: 2;
+}
+
+.sim-card-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.sim-card {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 28px 24px;
+  box-shadow: 0 6px 24px rgba(74, 144, 217, 0.12);
+  transition: all 0.2s ease;
+}
+
+.sim-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(74, 144, 217, 0.18);
+}
+
+.sim-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #357abd;
+  margin-bottom: 12px;
+}
+
+.sim-card-desc {
+  font-size: 14px;
+  color: #555;
+  line-height: 1.7;
+}
+
+.sim-action {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.sim-start-btn {
+  height: 52px !important;
+  padding: 0 48px !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  border-radius: 26px !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: none !important;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+}
+
+.sim-start-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(102, 126, 234, 0.5) !important;
+}
+
+.sim-tip {
+  margin-top: 18px;
+  color: #999;
+  font-size: 14px;
+}
+</style>
+```
+
+## 桂教通操作步骤
+
+1. 进入「自定义页面」→ 新建 → 类型选 **Vue 页面**
+2. 名称填「电路接线模拟」
+3. 把上面整段代码**完整替换**编辑器里的默认内容
+4. 确认 `simulatorUrl` 已指向本机路径（默认 `file:///D:/code/guijiaotong/接线模拟/index.html`，你目录不同就改掉）
+5. 点击右上角「保存」→ 启用
+6. 在左侧菜单的「Vue 页面」分组下就能看到入口
+
+## 为什么这样写
+
+- **只用 `ref` 和 `Button`**：符合桂教通 setup 钩子白名单
+- **不用 `onMounted` / `computed` / `watch` / `nextTick`**：避免被平台拦截
+- **样式写在 `<style scoped>` 里**：不会被污染，平台不会拦
+- **`window.open` 新窗口跳转**：仿真页有 canvas 画线、右键菜单、HTML5 audio，iframe 沙箱里大概率被劫持
+
+## ⚠️ 重要提醒：file:// 跳转的浏览器限制
+
+本地 `file://` 路径能跑通的前提是：**桂教通入口页本身也在你本机运行**（设计态桌面客户端 / 本地预览 / localhost）。这种情况下 `window.open('file:///...')` 正常打开。
+
+但如果你的桂教通是**云端 https 页面**（地址栏是 `https://xxx...`），浏览器出于安全策略会**拦截**从 https 跳转到本地 file:// 文件（报 "Not allowed to load local resource"）。这种拦截是浏览器层面的，代码绕不过，只能二选一：
+
+- **方案 A**：在本地 / 预览环境打开桂教通入口页再跳（推荐，零成本，不依赖外网）
+- **方案 B**：把仿真页部署到外网拿 https 地址（之前那份 EdgeOne Pages 方案兜底）
+
+补充两点：
+- `index.html` 引用了 font-awesome 的 CDN（图标字体），file:// 下需要联网才显示那些图标，不影响接线核心功能；canvas 画线和音效在 file:// 下都正常。
+- 如果 `window.open` 被浏览器当弹窗拦了，可改用模板里直接放一个 `<a :href="simulatorUrl" target="_blank">开始接线练习</a>` 的原生链接，原生链接跳转比 JS 弹窗更宽松。

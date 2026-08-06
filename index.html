@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>电路接线模拟</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="circuit-page">
+        <div class="circuit-header">
+            <h1>电路接线模拟</h1>
+            <div class="tips">从接口拖拽连线 | 右键删除组件</div>
+        </div>
+
+        <div class="circuit-container">
+            <div class="circuit-component-panel">
+                <div class="component-panel-title">元件列表</div>
+                <div class="component-slots">
+                    <div class="component-slot" role="button" tabindex="0" data-component-name="PNP型传感器">
+                        <img src="传感器.png" alt="PNP型传感器">
+                        <div class="component-slot-name">PNP型传感器</div>
+                    </div>
+                    <div class="component-slot" role="button" tabindex="0" data-component-name="NPN型传感器">
+                        <img src="传感器.png" alt="NPN型传感器">
+                        <div class="component-slot-name">NPN型传感器</div>
+                    </div>
+                    <div class="component-slot" role="button" tabindex="0" data-component-name="位移传感器">
+                        <img src="位移传感器.png" alt="位移传感器">
+                        <div class="component-slot-name">位移传感器</div>
+                    </div>
+                    <div class="component-slot" role="button" tabindex="0" data-component-name="光电传感器">
+                        <img src="光电传感器.png" alt="光电传感器">
+                        <div class="component-slot-name">光电传感器</div>
+                    </div>
+                </div>
+            </div>
+            <div class="canvas-wrapper">
+                <div class="canvas-grid"></div>
+                <div class="canvas-content"></div>
+                <canvas id="canvas"></canvas>
+
+                <div id="score-display" class="score-display"></div>
+
+                <div class="toolbar">
+                    <button id="select-btn" class="active">选择</button>
+                    <button id="delete-line-btn">删除连线</button>
+                    <button id="undo-btn">撤回上一步</button>
+                    <button id="reset-btn">重置接线</button>
+                    <button id="submit-btn">提交</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
