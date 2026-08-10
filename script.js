@@ -421,6 +421,120 @@ function saveNewTask() {
 let circuitInitialized = false;
 let circuitVars = null;
 
+// ===== AI 评分提交(学生接线 → 后端 → 桂教通 AI) =====
+async function handleAiSubmit() {
+    // 1. 检查是否选了任务
+    if (!selectedTaskId) {
+        showToast('❌ 请先在右侧选择一个任务', 'error');
+        return;
+    }
+
+    // 2. 弹出学生信息表单
+    const modal = document.getElementById('student-info-modal');
+    document.getElementById('submit-student-id').value = '';
+    document.getElementById('submit-class-name').value = '';
+    document.getElementById('submit-student-name').value = '';
+    modal.style.display = 'flex';
+    setTimeout(function() { document.getElementById('submit-student-id').focus(); }, 50);
+
+    const studentInfo = await new Promise(function(resolve) {
+        const confirmBtn = document.getElementById('submit-confirm-btn');
+        function onConfirm() {
+            const sid = document.getElementById('submit-student-id').value.trim();
+            const cls = document.getElementById('submit-class-name').value.trim();
+            const snm = document.getElementById('submit-student-name').value.trim();
+            if (!sid || !cls || !snm) {
+                showToast('❌ 请把学号/班级/姓名都填上', 'error');
+                return;
+            }
+            modal.style.display = 'none';
+            resolve({ student_id: sid, class_name: cls, student_name: snm });
+        }
+        function onCancel() {
+            modal.style.display = 'none';
+            resolve(null);
+        }
+        confirmBtn.onclick = onConfirm;
+        modal.querySelector('[data-close="student-info-modal"]').onclick = onCancel;
+    });
+
+    if (!studentInfo) return;
+
+    // 3. 显示加载弹窗
+    const gradingModal = document.getElementById('grading-modal');
+    document.getElementById('grading-message').textContent = 'AI 评分中,请稍候...';
+    gradingModal.style.display = 'flex';
+
+    try {
+        // 4. 截图画板
+        const canvasWrapper = document.querySelector('.canvas-wrapper');
+        const canvas = await html2canvas(canvasWrapper, {
+            backgroundColor: '#ffffff',
+            scale: 1,
+            logging: false,
+            useCORS: true,
+            allowTaint: true
+        });
+        const studentImage = canvas.toDataURL('image/png');
+
+        // 5. 取任务图 URL
+        const activeSlot = document.querySelector('.task-slot.active');
+        const taskImage = activeSlot ? (activeSlot.querySelector('img') ? activeSlot.querySelector('img').src : '') : '';
+
+        if (!taskImage) {
+            throw new Error('未找到任务图,请先在右侧选择任务');
+        }
+
+        // 6. POST 到隧道后端
+        document.getElementById('grading-message').textContent = '正在发送给 AI 评分(约 5-15 秒)...';
+        const response = await fetch('https://gjt.guijiaotong.site/api/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                student_id: studentInfo.student_id,
+                student_name: studentInfo.student_name,
+                class_name: studentInfo.class_name,
+                task_id: selectedTaskId,
+                task_image: taskImage,
+                student_image: studentImage
+            })
+        });
+
+        const result = await response.json();
+        gradingModal.style.display = 'none';
+
+        if (!result.ok) {
+            throw new Error(result.error || ('HTTP ' + response.status));
+        }
+
+        // 7. 显示 AI 评分结果弹窗
+        const scoreEl = document.getElementById('score-big-number');
+        scoreEl.textContent = result.score;
+        scoreEl.style.color = result.score >= 80 ? '#27ae60'
+                             : result.score >= 60 ? '#f39c12'
+                             : '#e74c3c';
+        document.getElementById('score-task-type').textContent = result.result_type || selectedTaskId || '未指定';
+
+        if (result.error_category) {
+            document.getElementById('score-error-block').style.display = 'block';
+            document.getElementById('score-error-category').textContent = result.error_category;
+        } else {
+            document.getElementById('score-error-block').style.display = 'none';
+        }
+
+        document.getElementById('score-analysis').textContent = result.analysis_text || '无详细评语';
+        document.getElementById('score-modal').style.display = 'flex';
+
+        // 同时也触发本地的欢庆动效
+        if (typeof playCheerSound === 'function') playCheerSound();
+        if (typeof playFireworks === 'function') playFireworks();
+
+    } catch (err) {
+        gradingModal.style.display = 'none';
+        showToast('❌ 提交失败:' + err.message, 'error');
+    }
+}
+
 function initCircuitSimulator() {
     if (circuitInitialized) {
         circuitVars.resetAllToDefault();
@@ -1833,7 +1947,7 @@ function initCircuitSimulator() {
     document.getElementById('delete-line-btn').addEventListener('click', function() { setMode('delete-line'); });
     document.getElementById('undo-btn').addEventListener('click', undo);
     document.getElementById('reset-btn').addEventListener('click', resetConnections);
-    document.getElementById('submit-btn').addEventListener('click', showScore);
+    document.getElementById('submit-btn').addEventListener('click', handleAiSubmit);
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
