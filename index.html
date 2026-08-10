@@ -19,25 +19,11 @@
 
         <div class="circuit-container">
             <div class="circuit-component-panel">
-                <div class="component-panel-title">元件列表</div>
-                <div class="component-slots">
-                    <div class="component-slot" role="button" tabindex="0" data-component-name="PNP型传感器">
-                        <img src="传感器.png" alt="PNP型传感器">
-                        <div class="component-slot-name">PNP型传感器</div>
-                    </div>
-                    <div class="component-slot" role="button" tabindex="0" data-component-name="NPN型传感器">
-                        <img src="传感器.png" alt="NPN型传感器">
-                        <div class="component-slot-name">NPN型传感器</div>
-                    </div>
-                    <div class="component-slot" role="button" tabindex="0" data-component-name="位移传感器">
-                        <img src="位移传感器.png" alt="位移传感器">
-                        <div class="component-slot-name">位移传感器</div>
-                    </div>
-                    <div class="component-slot" role="button" tabindex="0" data-component-name="光电传感器">
-                        <img src="光电传感器.png" alt="光电传感器">
-                        <div class="component-slot-name">光电传感器</div>
-                    </div>
+                <div class="panel-header">
+                    <div class="component-panel-title">元件列表</div>
+                    <button class="add-btn" id="add-component-btn" title="添加组件"><i class="fas fa-plus"></i></button>
                 </div>
+                <div class="component-slots" id="component-slots"></div>
             </div>
             <div class="canvas-wrapper">
                 <div class="canvas-grid"></div>
@@ -52,6 +38,93 @@
                     <button id="undo-btn">撤回上一步</button>
                     <button id="reset-btn">重置接线</button>
                     <button id="submit-btn">提交</button>
+                </div>
+            </div>
+            <div class="circuit-task-panel">
+                <div class="panel-header">
+                    <div class="task-panel-title">任务选择</div>
+                    <button class="add-btn" id="add-task-btn" title="添加任务"><i class="fas fa-plus"></i></button>
+                </div>
+                <div class="task-slots" id="task-slots"></div>
+            </div>
+        </div>
+
+        <!-- 组件添加弹窗 -->
+        <div id="component-modal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>添加新组件</h3>
+                    <button class="modal-close" data-close="component-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>组件名称</label>
+                        <input type="text" id="new-comp-name" placeholder="如：开关">
+                    </div>
+                    <div class="form-group">
+                        <label>上传图片</label>
+                        <input type="file" id="new-comp-image" accept="image/*">
+                    </div>
+                    <div class="form-hint">组件将使用默认尺寸（120×170）和2个接线端口（+/-）</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-close="component-modal">取消</button>
+                    <button class="btn-primary" id="save-component-btn">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 任务添加弹窗 -->
+        <div id="task-modal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>添加新任务</h3>
+                    <button class="modal-close" data-close="task-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>任务名称</label>
+                        <input type="text" id="new-task-name" placeholder="如：串联电路">
+                    </div>
+                    <div class="form-group">
+                        <label>上传图片</label>
+                        <input type="file" id="new-task-image" accept="image/*">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-close="task-modal">取消</button>
+                    <button class="btn-primary" id="save-task-btn">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提示弹窗 -->
+        <div id="alert-modal" class="modal-overlay">
+            <div class="modal" style="width:360px;">
+                <div class="modal-header">
+                    <h3 id="alert-title">提示</h3>
+                </div>
+                <div class="modal-body" style="text-align:center;padding:24px 20px;">
+                    <div id="alert-message" style="font-size:15px;color:#555;line-height:1.6;"></div>
+                </div>
+                <div class="modal-footer" style="justify-content:center;">
+                    <button class="btn-primary" id="alert-ok">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 确认删除弹窗 -->
+        <div id="confirm-modal" class="modal-overlay">
+            <div class="modal" style="width:360px;">
+                <div class="modal-header">
+                    <h3>确认删除</h3>
+                </div>
+                <div class="modal-body" style="text-align:center;padding:24px 20px;">
+                    <div id="confirm-message" style="font-size:15px;color:#555;line-height:1.6;"></div>
+                </div>
+                <div class="modal-footer" style="justify-content:center;">
+                    <button class="btn-secondary" id="confirm-cancel">取消</button>
+                    <button class="btn-primary" id="confirm-ok">确定</button>
                 </div>
             </div>
         </div>

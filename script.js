@@ -1,11 +1,147 @@
+// 资源基址：用相对路径("")。
+// 同源 iframe 部署时，无论本地 localhost:8080 还是 GitHub Pages (huanghaiying20.github.io/jiexian-sim/)，
+// 相邻文件 PNG / MP3 都能用相对路径找到，零外部依赖。
+// (旧版硬编码 Gitee raw 已弃用，因为现在走 iframe 同源方案，不再需要跨域 CDN。)
+var ASSET_BASE = '';
+function resolveAsset(p) {
+  if (!p) return p;
+  if (/^(https?:|data:|\/\/)/.test(p)) return p; // 已是绝对地址或 data URL,原样返回
+  return ASSET_BASE + p;
+}
+var IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+var DEFAULT_COMPONENTS = [
+    { type: 'power-supply', name: '漏电保护开关', image: '空气开关.png', imgW: 120, imgH: 160, width: 140, height: 230,
+      ports: [{ id: 'L', label: 'L (火线)', color: '#e74c3c' }, { id: 'N', label: 'N (零线)', color: '#3498db' }] },
+    { type: 'transformer', name: '开关电源', image: '电源开关.png', imgW: 150, imgH: 110, width: 185, height: 215,
+      ports: [{ id: 'L', label: 'L', color: '#e74c3c' }, { id: 'N', label: 'N', color: '#3498db' }, { id: 'COM', label: 'COM', color: '#7f8c8d' }, { id: 'V+', label: '24V', color: '#27ae60' }] },
+    { type: 'relay', name: '继电器', image: '继电器.png', imgW: 130, imgH: 130, width: 180, height: 250, hasDualPorts: true,
+      topPorts: [{ id: 'L', label: '8', color: '#e74c3c' }, { id: '', label: '', color: 'transparent', hidden: true }],
+      ports: [{ id: 'LOAD', label: '12', color: '#000000' }, { id: 'V+', label: '14', color: '#e74c3c' }, { id: 'V-', label: '13', color: '#3498db' }] },
+    { type: 'terminal-block', name: '接线端子排', image: '接线端子排.png', imgW: 150, imgH: 70, width: 170, height: 150, hasDualPorts: true,
+      topPorts: [{ id: '2', label: '1', color: '#e74c3c' }, { id: '3', label: '2', color: '#3498db' }, { id: '4', label: '3', color: '#27ae60' }, { id: '5', label: '4', color: '#9b59b6' }, { id: '1', label: '5', color: '#f39c12' }, { id: '12', label: '6', color: '#000000' }],
+      ports: [{ id: '6', label: '1', color: '#e74c3c' }, { id: '7', label: '2', color: '#3498db' }, { id: '8', label: '3', color: '#27ae60' }, { id: '9', label: '4', color: '#9b59b6' }, { id: '10', label: '5', color: '#f39c12' }, { id: '11', label: '6', color: '#000000' }] },
+    { type: 'buzzer', name: '蜂鸣器', image: '蜂鸣器.png', imgW: 100, imgH: 100, width: 120, height: 170,
+      ports: [{ id: 'V+', label: '+', color: '#e74c3c' }, { id: 'V-', label: '-', color: '#3498db' }] },
+    { type: 'detector', name: '位移传感器', image: '位移传感器.png', imgW: 120, imgH: 100, width: 140, height: 180,
+      ports: [{ id: 'V+', label: '24V', color: '#e74c3c' }, { id: 'V-', label: 'COM', color: '#3498db' }, { id: 'signal', label: '信号', color: '#2c3e50' }] },
+    { type: 'sensor', name: '光电开关', image: '光电传感器.png', imgW: 130, imgH: 130, width: 130, height: 200, portsTop: true,
+      ports: [{ id: 'L1', label: 'L', color: '#e74c3c' }, { id: 'L2', label: 'L', color: '#e74c3c' }] },
+    { type: 'bulb', name: '灯泡', image: '灯泡.png', imgW: 100, imgH: 100, width: 120, height: 170,
+      ports: [{ id: 'V+', label: '+', color: '#e74c3c' }, { id: 'V-', label: '-', color: '#3498db' }] }
+];
+
+var DEFAULT_TASKS = [
+    { id: 'series', name: '串联电路', image: '串联电路.png' },
+    { id: 'parallel', name: '并联电路', image: '并联电路.png' }
+];
+
 document.addEventListener('DOMContentLoaded', function() {
-    const componentSlots = document.querySelectorAll('.component-slot');
-    componentSlots.forEach(slot => {
-        slot.addEventListener('click', function() {
-            componentSlots.forEach(item => item.classList.remove('active'));
-            this.classList.add('active');
-            if (window.updateDetectorComponent) {
-                window.updateDetectorComponent(this.dataset.componentName, this.querySelector('img')?.getAttribute('src'));
+    // Clean up duplicates and empty-image custom components on load
+    (function cleanupLocalStorage() {
+        try {
+            var localComponents = JSON.parse(localStorage.getItem('custom_components') || '[]');
+            var seen = {};
+            var cleaned = [];
+            for (var i = 0; i < localComponents.length; i++) {
+                var comp = localComponents[i];
+                // Skip if no image or empty name
+                if (!comp.image || !comp.name) continue;
+                // Skip duplicates (keep first one)
+                if (seen[comp.name]) continue;
+                seen[comp.name] = true;
+                cleaned.push(comp);
+            }
+            if (cleaned.length !== localComponents.length) {
+                localStorage.setItem('custom_components', JSON.stringify(cleaned));
+            }
+        } catch(e) {}
+    })();
+
+    fetch(resolveAsset('config.json')).then(function(r) { return r.json(); }).then(function(config) {
+        initApp(config.components, config.tasks);
+    }).catch(function(err) {
+        initApp(DEFAULT_COMPONENTS, DEFAULT_TASKS);
+    });
+});
+
+function initApp(baseComponents, baseTasks) {
+    var localComponents = JSON.parse(localStorage.getItem('custom_components') || '[]');
+    var localTasks = JSON.parse(localStorage.getItem('custom_tasks') || '[]');
+    var allComponents = baseComponents.concat(localComponents);
+    var allTasks = baseTasks.concat(localTasks);
+
+    buildComponentTypes(allComponents);
+    renderSidebar(allComponents);
+    renderTaskPanel(allTasks);
+    initCircuitSimulator();
+    bindSidebarEvents();
+    bindModalEvents();
+    updateSidebarLock();
+}
+
+function buildComponentTypes(components) {
+    window.__componentConfigs = components;
+}
+
+function renderSidebar(components) {
+    var container = document.getElementById('component-slots');
+    container.innerHTML = '';
+    var deletedTypes = JSON.parse(localStorage.getItem('deleted_components') || '[]');
+    components.forEach(function(c) {
+        if (deletedTypes.indexOf(c.type) !== -1) return;
+        var slot = document.createElement('div');
+        slot.className = 'component-slot';
+        slot.setAttribute('role', 'button');
+        slot.setAttribute('tabindex', '0');
+        slot.dataset.componentType = c.type;
+        var isCustom = c.type.indexOf('custom-') === 0;
+        var delBtn = '<button class="slot-del-btn" data-del-type="' + c.type + '" data-is-custom="' + isCustom + '" title="删除"><i class="fas fa-times"></i></button>';
+        slot.innerHTML = delBtn +
+            '<img src="' + resolveAsset(c.image) + '" alt="' + c.name + '">' +
+            '<div class="component-slot-name">' + c.name + '</div>';
+        container.appendChild(slot);
+    });
+}
+
+function renderTaskPanel(tasks) {
+    var container = document.getElementById('task-slots');
+    container.innerHTML = '';
+    var deletedTasks = JSON.parse(localStorage.getItem('deleted_tasks') || '[]');
+    tasks.forEach(function(t) {
+        if (deletedTasks.indexOf(t.id) !== -1) return;
+        var slot = document.createElement('div');
+        slot.className = 'task-slot';
+        slot.setAttribute('role', 'button');
+        slot.setAttribute('tabindex', '0');
+        slot.dataset.task = t.id;
+        var isCustom = t.id.indexOf('custom-') === 0;
+        var delBtn = '<button class="slot-del-btn task-del-btn" data-del-task="' + t.id + '" data-is-custom="' + isCustom + '" title="删除"><i class="fas fa-times"></i></button>';
+        slot.innerHTML = delBtn +
+            '<img src="' + resolveAsset(t.image) + '" alt="' + t.name + '">' +
+            '<div class="task-slot-name">' + t.name + '</div>';
+        container.appendChild(slot);
+    });
+}
+
+var selectedTaskId = null;
+
+function updateSidebarLock() {
+    // 保留函数名但不再改变样式，仅用于状态判断
+}
+
+function bindSidebarEvents() {
+    var componentSlots = document.querySelectorAll('.component-slot');
+    componentSlots.forEach(function(slot) {
+        slot.addEventListener('click', function(e) {
+            if (e.target.closest('.slot-del-btn')) return;
+            if (!selectedTaskId) {
+                showAlert('未选择任务', '请先在右侧选择一个任务，再添加元件。');
+                return;
+            }
+            var type = this.dataset.componentType;
+            if (type && circuitVars) {
+                circuitVars.addComponentToCanvas(type);
             }
         });
         slot.addEventListener('keydown', function(e) {
@@ -16,8 +152,271 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    initCircuitSimulator();
+    document.querySelectorAll('.slot-del-btn[data-del-type]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteCustomComponent(this.dataset.delType);
+        });
+    });
+
+    var taskSlots = document.querySelectorAll('.task-slot');
+    taskSlots.forEach(function(slot) {
+        slot.addEventListener('click', function(e) {
+            if (e.target.closest('.slot-del-btn')) return;
+            taskSlots.forEach(function(item) { item.classList.remove('active'); });
+            this.classList.add('active');
+            selectedTaskId = this.dataset.task;
+            updateSidebarLock();
+            var nameEl = this.querySelector('.task-slot-name');
+            var taskName = nameEl ? nameEl.textContent : (this.dataset.task || '');
+            showToast('✅ 已选择任务：' + taskName, 'success');
+        });
+        slot.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.click();
+            }
+        });
+    });
+
+    document.querySelectorAll('.slot-del-btn[data-del-task]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteCustomTask(this.dataset.delTask);
+        });
+    });
+}
+
+function deleteCustomComponent(type) {
+    var comp = (window.__componentConfigs || []).find(function(c) { return c.type === type; });
+    var compName = comp ? comp.name : '该组件';
+    showConfirm('确定要删除「' + compName + '」吗？', function() {
+        var isCustom = type.indexOf('custom-') === 0;
+        if (isCustom) {
+            var localComponents = JSON.parse(localStorage.getItem('custom_components') || '[]');
+            localComponents = localComponents.filter(function(c) { return c.type !== type; });
+            localStorage.setItem('custom_components', JSON.stringify(localComponents));
+        } else {
+            var deleted = JSON.parse(localStorage.getItem('deleted_components') || '[]');
+            if (deleted.indexOf(type) === -1) deleted.push(type);
+            localStorage.setItem('deleted_components', JSON.stringify(deleted));
+        }
+
+        var allComponents = (window.__componentConfigs || []).filter(function(c) {
+            if (c.type === type) return false;
+            if (!isCustom && JSON.parse(localStorage.getItem('deleted_components') || '[]').indexOf(c.type) !== -1) return false;
+            return true;
+        });
+        buildComponentTypes(allComponents);
+        renderSidebar(allComponents);
+        bindSidebarEvents();
+        if (circuitVars) {
+            circuitVars.rebuildComponentTypes();
+        }
+        showToast('✅ 组件已删除', 'success');
+    });
+}
+
+function deleteCustomTask(id) {
+    var localTasks = JSON.parse(localStorage.getItem('custom_tasks') || '[]');
+    var allTasks = DEFAULT_TASKS.concat(localTasks);
+    var task = allTasks.find(function(t) { return t.id === id; });
+    var taskName = task ? task.name : '该任务';
+    showConfirm('确定要删除「' + taskName + '」吗？', function() {
+        var isCustom = id.indexOf('custom-') === 0;
+        if (isCustom) {
+            var localTasks2 = JSON.parse(localStorage.getItem('custom_tasks') || '[]');
+            localTasks2 = localTasks2.filter(function(t) { return t.id !== id; });
+            localStorage.setItem('custom_tasks', JSON.stringify(localTasks2));
+        } else {
+            var deleted = JSON.parse(localStorage.getItem('deleted_tasks') || '[]');
+            if (deleted.indexOf(id) === -1) deleted.push(id);
+            localStorage.setItem('deleted_tasks', JSON.stringify(deleted));
+        }
+
+        var lt = JSON.parse(localStorage.getItem('custom_tasks') || '[]');
+        var dt = JSON.parse(localStorage.getItem('deleted_tasks') || '[]');
+        var remaining = DEFAULT_TASKS.concat(lt).filter(function(t) {
+            return dt.indexOf(t.id) === -1;
+        });
+        renderTaskPanel(remaining);
+        bindSidebarEvents();
+        showToast('✅ 任务已删除', 'success');
+    });
+}
+
+var _confirmCallback = null;
+function showConfirm(message, callback) {
+    _confirmCallback = callback;
+    document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-modal').classList.add('show');
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var okBtn = document.getElementById('confirm-ok');
+    var cancelBtn = document.getElementById('confirm-cancel');
+    if (okBtn) okBtn.addEventListener('click', function() {
+        document.getElementById('confirm-modal').classList.remove('show');
+        if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+    });
+    if (cancelBtn) cancelBtn.addEventListener('click', function() {
+        document.getElementById('confirm-modal').classList.remove('show');
+        _confirmCallback = null;
+    });
+
+    var alertOkBtn = document.getElementById('alert-ok');
+    if (alertOkBtn) alertOkBtn.addEventListener('click', function() {
+        document.getElementById('alert-modal').classList.remove('show');
+    });
 });
+
+function showAlert(title, message) {
+    document.getElementById('alert-title').textContent = title || '提示';
+    document.getElementById('alert-message').textContent = message || '';
+    document.getElementById('alert-modal').classList.add('show');
+}
+
+function bindModalEvents() {
+    document.getElementById('add-component-btn').addEventListener('click', function() {
+        document.getElementById('component-modal').classList.add('show');
+    });
+    document.getElementById('add-task-btn').addEventListener('click', function() {
+        document.getElementById('task-modal').classList.add('show');
+    });
+
+    document.querySelectorAll('[data-close]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var modalId = this.dataset.close;
+            document.getElementById(modalId).classList.remove('show');
+        });
+    });
+
+    document.getElementById('save-component-btn').addEventListener('click', function() {
+        saveNewComponent();
+    });
+    document.getElementById('save-task-btn').addEventListener('click', function() {
+        saveNewTask();
+    });
+}
+
+function uploadImageFile(file) {
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            resolve(e.target.result);
+        };
+        reader.onerror = function() {
+            reject(new Error('读取文件失败'));
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function saveNewComponent() {
+    var name = document.getElementById('new-comp-name').value.trim();
+    var imageInput = document.getElementById('new-comp-image');
+    var width = 120;
+    var height = 170;
+    var imgW = 100;
+    var imgH = 100;
+
+    if (!name) {
+        showAlert('提示', '请填写组件名称');
+        return;
+    }
+
+    var type = 'custom-' + Date.now();
+
+    var finishSave = function(imageUrl) {
+        var localComponents = JSON.parse(localStorage.getItem('custom_components') || '[]');
+
+        // Check for duplicate name
+        var existing = localComponents.find(function(c) { return c.name === name; });
+        if (existing) {
+            showAlert('提示', '已存在名为「' + name + '」的组件，请勿重复添加');
+            return;
+        }
+
+        var newComp = {
+            type: type,
+            name: name,
+            image: imageUrl || '',
+            imgW: imgW,
+            imgH: imgH,
+            width: width,
+            height: height,
+            ports: [
+                { id: 'V+', label: '+', color: '#e74c3c' },
+                { id: 'V-', label: '-', color: '#3498db' }
+            ]
+        };
+
+        localComponents.push(newComp);
+        localStorage.setItem('custom_components', JSON.stringify(localComponents));
+
+        var allComponents = (window.__componentConfigs || []).concat([newComp]);
+        buildComponentTypes(allComponents);
+        renderSidebar(allComponents);
+        bindSidebarEvents();
+        if (circuitVars) {
+            circuitVars.rebuildComponentTypes();
+        }
+
+        document.getElementById('component-modal').classList.remove('show');
+        resetComponentForm();
+        showToast('✅ 新组件已添加', 'success');
+    };
+
+    if (imageInput.files && imageInput.files[0]) {
+        uploadImageFile(imageInput.files[0]).then(function(url) {
+            finishSave(url);
+        }).catch(function(err) {
+            finishSave('');
+        });
+    } else {
+        showAlert('提示', '请选择一张图片');
+    }
+}
+
+function resetComponentForm() {
+    document.getElementById('new-comp-name').value = '';
+    document.getElementById('new-comp-image').value = '';
+}
+
+function saveNewTask() {
+    var name = document.getElementById('new-task-name').value.trim();
+    var imageInput = document.getElementById('new-task-image');
+
+    if (!name) {
+        showAlert('提示', '请填写任务名称');
+        return;
+    }
+
+    var finishSave = function(imageUrl) {
+        var localTasks = JSON.parse(localStorage.getItem('custom_tasks') || '[]');
+        var newId = 'custom-' + Date.now();
+        localTasks.push({ id: newId, name: name, image: imageUrl || '' });
+        localStorage.setItem('custom_tasks', JSON.stringify(localTasks));
+
+        var allTasks = DEFAULT_TASKS.concat(localTasks);
+        renderTaskPanel(allTasks);
+        bindSidebarEvents();
+
+        document.getElementById('task-modal').classList.remove('show');
+        document.getElementById('new-task-name').value = '';
+        document.getElementById('new-task-image').value = '';
+        showToast('✅ 新任务已添加', 'success');
+    };
+
+    if (imageInput.files && imageInput.files[0]) {
+        uploadImageFile(imageInput.files[0]).then(function(url) {
+            finishSave(url);
+        }).catch(function(err) {
+            finishSave('');
+        });
+    } else {
+        showAlert('提示', '请选择一张图片');
+    }
+}
 
 let circuitInitialized = false;
 let circuitVars = null;
@@ -147,7 +546,7 @@ function initCircuitSimulator() {
     function playCheerSound() {
         try {
             if (!cheerAudioEl) {
-                cheerAudioEl = new Audio('一大群人欢呼鼓掌的音效.mp3');
+                cheerAudioEl = new Audio(resolveAsset('一大群人欢呼鼓掌的音效.mp3'));
                 cheerAudioEl.preload = 'auto';
             }
             cheerAudioEl.pause();
@@ -309,17 +708,70 @@ function initCircuitSimulator() {
     }
     
     function undo() {
-        const userConnections = connections.filter(conn => !conn.isPreset);
-        if (userConnections.length === 0) {
-            showToast('❌ 没有可以撤回的新增连接线', 'error');
+        if (historyIndex <= 0) {
+            showToast('❌ 没有可以撤回的操作', 'error');
             return;
         }
 
-        const lastConnection = userConnections.reduce((latest, conn) => {
-            return (conn.number || 0) > (latest.number || 0) ? conn : latest;
-        }, userConnections[0]);
+        historyIndex--;
+        const prevState = history[historyIndex];
 
-        connections = connections.filter(conn => conn.id !== lastConnection.id);
+        components.forEach(function(comp) {
+            const el = document.querySelector('[data-id="' + comp.id + '"]');
+            if (el) el.remove();
+        });
+
+        components = prevState.components.map(function(c) {
+            const config = componentTypes[c.type];
+            const comp = {
+                id: c.id,
+                type: c.type,
+                x: c.x,
+                y: c.y,
+                width: c.width,
+                height: c.height,
+                name: config.name,
+                icon: config.icon,
+                portsTop: config.portsTop,
+                hasTopPort: config.hasTopPort,
+                hasDualPorts: config.hasDualPorts,
+                ports: config.ports.map(function(port, index) {
+                    const numPorts = config.ports.length;
+                    const spacing = c.width / (numPorts + 1);
+                    const portY = config.portsTop ? 10 : c.height - 35;
+                    return {
+                        id: port.id,
+                        label: port.label,
+                        color: port.color,
+                        x: spacing * (index + 1) - 8,
+                        y: portY,
+                        componentId: c.id
+                    };
+                })
+            };
+            if (config.hasDualPorts && config.topPorts) {
+                comp.topPorts = config.topPorts.map(function(port, index) {
+                    const numPorts = config.topPorts.length;
+                    const spacing = c.width / (numPorts + 1);
+                    return {
+                        id: port.id,
+                        label: port.label,
+                        color: port.color,
+                        x: spacing * (index + 1) - 8,
+                        y: 10,
+                        componentId: c.id,
+                        hidden: port.hidden
+                    };
+                });
+            }
+            renderComponent(comp);
+            return comp;
+        });
+        if (circuitVars) {
+            circuitVars.components = components;
+        }
+
+        connections = prevState.connections;
         if (circuitVars) {
             circuitVars.connections = connections;
         }
@@ -331,27 +783,37 @@ function initCircuitSimulator() {
         lineEnd = null;
         selectedNode = null;
         draggedNode = null;
+        selectedComponent = null;
 
         document.removeEventListener('click', handleLineNodeAdd);
         document.removeEventListener('click', handlePortClickForLineEnd);
 
         drawConnections();
-        showToast(`✅ 已撤回${lastConnection.number}号线`, 'success');
+        showToast('✅ 已撤回到上一步', 'success');
     }
     
     function resetConnections() {
-        if (connections.length === 0) {
-            showToast('❌ 没有接线需要重置', 'error');
-            return;
-        }
-        
         saveState();
-        connections = [];
-        if (circuitVars) {
-            circuitVars.connections = connections;
-        }
-        drawConnections();
-        showToast('✅ 已清空所有接线', 'success');
+        components.forEach(function(comp) {
+            const el = document.querySelector('[data-id="' + comp.id + '"]');
+            if (el) el.remove();
+        });
+        components.length = 0;
+        connections.length = 0;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        selectedComponent = null;
+        selectedPort = null;
+        isDrawingLine = false;
+        draggedComponent = null;
+        selectedNode = null;
+        history.length = 0;
+        historyIndex = -1;
+        selectedTaskId = null;
+        document.querySelectorAll('.task-slot').forEach(function(item) {
+            item.classList.remove('active');
+        });
+        saveState();
+        showToast('✅ 画布已清空', 'success');
     }
 
     function showToast(message, type) {
@@ -369,101 +831,24 @@ function initCircuitSimulator() {
         }, 2000);
     }
 
-    const componentTypes = {
-        'power-supply': {
-            name: '漏电保护开关',
-            icon: '<img src="空气开关.png" alt="漏电保护开关" style="width:120px;height:160px;object-fit:contain;border-radius:4px;">',
-            width: 140,
-            height: 230,
-            ports: [
-                { id: 'L', label: 'L (火线)', color: '#e74c3c' },
-                { id: 'N', label: 'N (零线)', color: '#3498db' }
-            ]
-        },
-        'transformer': {
-            name: '开关电源',
-            icon: '<img src="电源开关.png" alt="开关电源" style="width:150px;height:110px;object-fit:contain;border-radius:4px;">',
-            width: 185,
-            height: 215,
-            ports: [
-                { id: 'L', label: 'L', color: '#e74c3c' },
-                { id: 'N', label: 'N', color: '#3498db' },
-                { id: 'COM', label: 'COM', color: '#7f8c8d' },
-                { id: 'V+', label: '24V', color: '#27ae60' }
-            ]
-        },
-        'sensor': {
-            name: '光电开关',
-            icon: '<img src="单控开关.png" alt="光电开关" style="width:130px;height:130px;object-fit:contain;border-radius:4px;">',
-            width: 130,
-            height: 200,
-            portsTop: true,
-            ports: [
-                { id: 'L1', label: 'L', color: '#e74c3c' },
-                { id: 'L2', label: 'L', color: '#e74c3c' }
-            ]
-        },
-        'relay': {
-            name: '继电器',
-            icon: '<img src="继电器.png" alt="继电器" style="width:130px;height:130px;object-fit:contain;border-radius:4px;">',
-            width: 180,
-            height: 250,
-            hasDualPorts: true,
-            topPorts: [
-                { id: 'L', label: '8', color: '#e74c3c' },
-                { id: '', label: '', color: 'transparent', hidden: true }
-            ],
-            ports: [
-                { id: 'LOAD', label: '12', color: '#000000' },
-                { id: 'V+', label: '14', color: '#e74c3c' },
-                { id: 'V-', label: '13', color: '#3498db' }
-            ]
-        },
-        'terminal-block': {
-            name: '接线端子排',
-            icon: '<img src="接线端子排.png" alt="接线端子排" style="width:150px;height:70px;object-fit:contain;border-radius:4px;">',
-            width: 170,
-            height: 150,
-            hasDualPorts: true,
-            topPorts: [
-                { id: '2', label: '1', color: '#e74c3c' },
-                { id: '3', label: '2', color: '#3498db' },
-                { id: '4', label: '3', color: '#27ae60' },
-                { id: '5', label: '4', color: '#9b59b6' },
-                { id: '1', label: '5', color: '#f39c12' },
-                { id: '12', label: '6', color: '#000000' }
-            ],
-            ports: [
-                { id: '6', label: '1', color: '#e74c3c' },
-                { id: '7', label: '2', color: '#3498db' },
-                { id: '8', label: '3', color: '#27ae60' },
-                { id: '9', label: '4', color: '#9b59b6' },
-                { id: '10', label: '5', color: '#f39c12' },
-                { id: '11', label: '6', color: '#000000' }
-            ]
-        },
-        'buzzer': {
-            name: '蜂鸣器',
-            icon: '<img src="蜂鸣器.png" alt="蜂鸣器" style="width:100px;height:100px;object-fit:contain;border-radius:4px;">',
-            width: 120,
-            height: 170,
-            ports: [
-                { id: 'V+', label: '+', color: '#e74c3c' },
-                { id: 'V-', label: '-', color: '#3498db' }
-            ]
-        },
-        'detector': {
-            name: '',
-            icon: '',
-            width: 140,
-            height: 180,
-            ports: [
-                { id: 'V+', label: '24V', color: '#e74c3c' },
-                { id: 'V-', label: 'COM', color: '#3498db' },
-                { id: 'signal', label: '信号', color: '#2c3e50' }
-            ]
-        }
-    };
+    var componentTypes = {};
+    function rebuildComponentTypes() {
+        componentTypes = {};
+        (window.__componentConfigs || []).forEach(function(cfg) {
+            componentTypes[cfg.type] = {
+                name: cfg.name,
+                icon: '<img src="' + resolveAsset(cfg.image) + '" alt="' + cfg.name + '" style="width:' + cfg.imgW + 'px;height:' + cfg.imgH + 'px;object-fit:contain;border-radius:4px;">',
+                width: cfg.width,
+                height: cfg.height,
+                portsTop: cfg.portsTop,
+                hasTopPort: cfg.hasTopPort,
+                hasDualPorts: cfg.hasDualPorts,
+                topPorts: cfg.topPorts,
+                ports: cfg.ports
+            };
+        });
+    }
+    rebuildComponentTypes();
 
     function resizeCanvas() {
         canvas.width = 2000;
@@ -926,10 +1311,15 @@ function initCircuitSimulator() {
             return { valid: true, message: '连接正确：' + getComponentName(fromType) + getPortLabel(fromType, fromPort) + ' → ' + getComponentName(toType) + getPortLabel(toType, toPort) };
         }
 
+        if ((fromType === 'bulb' && toType === 'terminal-block') ||
+            (fromType === 'terminal-block' && toType === 'bulb')) {
+            return { valid: true, message: '连接正确：' + getComponentName(fromType) + getPortLabel(fromType, fromPort) + ' → ' + getComponentName(toType) + getPortLabel(toType, toPort) };
+        }
+
         const rules = {
             'power-supply': {
-                'L': { allowed: ['transformer', 'sensor', 'terminal-block'], allowedPorts: ['L', 'L1', 'L2', '6'] },
-                'N': { allowed: ['transformer', 'terminal-block'], allowedPorts: ['N', '2', '7'] }
+                'L': { allowed: ['transformer', 'sensor', 'terminal-block', 'bulb'], allowedPorts: ['L', 'L1', 'L2', '6', 'V+'] },
+                'N': { allowed: ['transformer', 'terminal-block', 'bulb'], allowedPorts: ['N', '2', '7', 'V-'] }
             },
             'transformer': {
                 'L': { allowed: ['power-supply', 'terminal-block'], allowedPorts: ['L', '1', '6', '2'] },
@@ -960,6 +1350,10 @@ function initCircuitSimulator() {
             'plug': {
                 'V+': { allowed: ['transformer', 'power-supply'], allowedPorts: ['V+', 'L'] },
                 'V-': { allowed: ['transformer'], allowedPorts: ['COM'] }
+            },
+            'bulb': {
+                'V+': { allowed: ['power-supply', 'transformer', 'terminal-block'], allowedPorts: ['L', 'V+', '5', '9'] },
+                'V-': { allowed: ['power-supply', 'transformer', 'terminal-block'], allowedPorts: ['N', 'COM', '4', '10'] }
             },
             'terminal-block': {
                 '1': { allowed: ['relay', 'buzzer', 'detector'], allowedPorts: ['L', 'V-', 'signal'] },
@@ -1480,27 +1874,11 @@ function initCircuitSimulator() {
         isLoadingPresetConnections = false;
     }
 
-    setTimeout(function() {
-        initDefaultComponents();
-        
-        history = [];
-        historyIndex = -1;
-        saveState();
-    }, 100);
-    
-    function resetAllToDefault() {
-        document.querySelectorAll('.canvas-component').forEach(function(el) { el.remove(); });
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        components.length = 0;
-        connections.length = 0;
-        history.length = 0;
-        historyIndex = -1;
-        initDefaultComponents();
-        setTimeout(function() {
-            history.length = 0;
-            historyIndex = -1;
-            saveState();
-        }, 100);
+    function addComponentToCanvas(type) {
+        var x = 200 + Math.random() * 400;
+        var y = 100 + Math.random() * 200;
+        createComponent(type, x, y);
+        showToast('✅ 已添加组件到画布', 'success');
     }
 
     circuitVars = {
@@ -1508,9 +1886,8 @@ function initCircuitSimulator() {
         ctx: ctx,
         components: components,
         connections: connections,
-        initDefaultComponents: initDefaultComponents,
-        initPresetConnections: initPresetConnections,
-        resetAllToDefault: resetAllToDefault,
+        addComponentToCanvas: addComponentToCanvas,
+        rebuildComponentTypes: rebuildComponentTypes,
         saveState: saveState
     };
 }
