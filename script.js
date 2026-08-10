@@ -494,12 +494,15 @@ async function handleAiSubmit() {
         formData.append('task_id', selectedTaskId);
         formData.append('task_image', taskImage);
         formData.append('student_image', studentImage);
+        console.log('[circuit-submit] → POST /api/public/circuit/submit | student_id=', studentInfo.student_id, '| task_id=', selectedTaskId, '| student_image_size=', studentImage.length);
         const response = await fetch('https://gjt.guijiaotong.site/api/public/circuit/submit', {
             method: 'POST',
             body: formData
         });
+        console.log('[circuit-submit] ← HTTP', response.status, response.statusText);
 
         const resultJson = await response.json();
+        console.log('[circuit-submit] ← body:', resultJson);
         gradingModal.style.display = 'none';
 
         // FastAPI 包装格式: { success, message, data: {score, result_type, ...} }
@@ -507,6 +510,11 @@ async function handleAiSubmit() {
             throw new Error(resultJson.message || ('HTTP ' + response.status));
         }
         const result = resultJson.data || {};
+
+        // ★ 关键诊断：如果后端返回了 record_id 但 score 是 null,说明桂教通 workflow 出了岔
+        if (typeof result.score !== 'number' && result.record_id) {
+            console.warn('[circuit-submit] ⚠ 后端说评分完成了(落库了),但 score 缺失。record_id=', result.record_id, '| raw answer=', result.analysis_text);
+        }
 
         // 7. 显示 AI 评分结果弹窗
         const scoreEl = document.getElementById('score-big-number');
@@ -540,7 +548,12 @@ async function handleAiSubmit() {
 
     } catch (err) {
         gradingModal.style.display = 'none';
-        showToast('❌ 提交失败:' + err.message, 'error');
+        console.error('[circuit-submit] 错误对象:', err);
+        console.error('[circuit-submit] 错误堆栈:', err.stack);
+        const detail = (err && err.message) ? err.message : String(err);
+        // ★ alert 强制弹出,保证用户能看到错误(不会像 toast 那样 2 秒消失)
+        alert('❌ 提交失败\n\n' + detail + '\n\n→ 请按 F12 打开 Console,Network 标签里找 /api/public/circuit/submit 请求,把响应体截图发我');
+        showToast('❌ 提交失败:' + detail, 'error');
     }
 }
 
