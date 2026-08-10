@@ -485,34 +485,38 @@ async function handleAiSubmit() {
             throw new Error('未找到任务图,请先在右侧选择任务');
         }
 
-        // 6. POST 到隧道后端
+        // 6. POST 到 FastAPI(走桂教通工作流 → 网络请求存库)
         document.getElementById('grading-message').textContent = '正在发送给 AI 评分(约 5-15 秒)...';
-        const response = await fetch('https://gjt.guijiaotong.site/api/submit', {
+        const formData = new FormData();
+        formData.append('student_id', studentInfo.student_id);
+        formData.append('student_name', studentInfo.student_name);
+        formData.append('class_name', studentInfo.class_name);
+        formData.append('task_id', selectedTaskId);
+        formData.append('task_image', taskImage);
+        formData.append('student_image', studentImage);
+        const response = await fetch('https://gjt.guijiaotong.site/api/public/circuit/submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                student_id: studentInfo.student_id,
-                student_name: studentInfo.student_name,
-                class_name: studentInfo.class_name,
-                task_id: selectedTaskId,
-                task_image: taskImage,
-                student_image: studentImage
-            })
+            body: formData
         });
 
-        const result = await response.json();
+        const resultJson = await response.json();
         gradingModal.style.display = 'none';
 
-        if (!result.ok) {
-            throw new Error(result.error || ('HTTP ' + response.status));
+        // FastAPI 包装格式: { success, message, data: {score, result_type, ...} }
+        if (!resultJson.success) {
+            throw new Error(resultJson.message || ('HTTP ' + response.status));
         }
+        const result = resultJson.data || {};
 
         // 7. 显示 AI 评分结果弹窗
         const scoreEl = document.getElementById('score-big-number');
-        scoreEl.textContent = result.score;
-        scoreEl.style.color = result.score >= 80 ? '#27ae60'
-                             : result.score >= 60 ? '#f39c12'
+        const scoreVal = (typeof result.score === 'number') ? result.score : null;
+        scoreEl.textContent = scoreVal !== null ? scoreVal : '--';
+        scoreEl.style.color = scoreVal === null ? '#999'
+                             : scoreVal >= 80 ? '#27ae60'
+                             : scoreVal >= 60 ? '#f39c12'
                              : '#e74c3c';
+        scoreEl.style.fontSize = scoreVal === null ? '48px' : '64px';
         document.getElementById('score-task-type').textContent = result.result_type || selectedTaskId || '未指定';
 
         if (result.error_category) {
@@ -525,9 +529,14 @@ async function handleAiSubmit() {
         document.getElementById('score-analysis').textContent = result.analysis_text || '无详细评语';
         document.getElementById('score-modal').style.display = 'flex';
 
+        // AI 失败时的友好提示
+        if (scoreVal === null) {
+            showToast('⚠ AI 评分服务暂时不可用,提交已记录到数据库,稍后由教师补评', 'warn');
+        }
+
         // 同时也触发本地的欢庆动效
-        if (typeof playCheerSound === 'function') playCheerSound();
-        if (typeof playFireworks === 'function') playFireworks();
+        if (typeof playCheerSound === 'function' && scoreVal !== null) playCheerSound();
+        if (typeof playFireworks === 'function' && scoreVal !== null) playFireworks();
 
     } catch (err) {
         gradingModal.style.display = 'none';
