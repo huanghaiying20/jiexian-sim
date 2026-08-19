@@ -503,9 +503,9 @@ async function handleAiSubmit() {
         formData.append('student_image', studentImage);
         console.log('[circuit-submit] → POST /api/public/circuit/submit | student_id=', studentInfo.student_id, '| task_id=', selectedTaskId, '| student_image_size=', studentImage.length);
 
-        // ★ 自动重试：隧道偶尔断连，最多重试3次，间隔2秒
+        // ★ 自动重试：隧道偶尔断连，最多重试5次，间隔3秒
         const API_URL = 'https://gjt.guijiaotong.site/api/public/circuit/submit';
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 5;
         let response = null;
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -515,12 +515,17 @@ async function handleAiSubmit() {
                     body: formData
                 });
                 console.log('[circuit-submit] ← HTTP', response.status, response.statusText, '| attempt', attempt);
-                if (response.ok || response.status === 422) break; // 成功或业务错误不重试
-                // 5xx 服务端错误才重试
+                if (response.ok || response.status === 422) break;
+                // 5xx 服务端错误也重试（后端可能重启中）
+                if (attempt < MAX_RETRIES) {
+                    console.warn('[circuit-submit] ⚠ HTTP', response.status, ', retrying...');
+                    await new Promise(r => setTimeout(r, 3000));
+                    continue;
+                }
             } catch (fetchErr) {
                 console.warn('[circuit-submit] ✕ attempt', attempt, 'failed:', fetchErr.message);
                 if (attempt < MAX_RETRIES) {
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 3000));
                 } else {
                     throw new Error('网络连接失败，请检查隧道是否正常运行。错误: ' + fetchErr.message);
                 }
