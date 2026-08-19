@@ -286,7 +286,14 @@ function bindModalEvents() {
     document.querySelectorAll('[data-close]').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var modalId = this.dataset.close;
-            document.getElementById(modalId).classList.remove('show');
+            var el = document.getElementById(modalId);
+            if (!el) return;
+            // 兼容两种隐藏方式: class-based (.show) 和 style.display
+            if (el.classList.contains('show')) {
+                el.classList.remove('show');
+            } else {
+                el.style.display = 'none';
+            }
         });
     });
 
