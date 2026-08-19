@@ -503,33 +503,55 @@ async function handleAiSubmit() {
         formData.append('student_image', studentImage);
         console.log('[circuit-submit] → POST /api/public/circuit/submit | student_id=', studentInfo.student_id, '| task_id=', selectedTaskId, '| student_image_size=', studentImage.length);
 
-        // ★ 自动重试：隧道偶尔断连，最多重试5次，间隔3秒
-        const API_URL = 'https://gjt.guijiaotong.site/api/public/circuit/submit';
-        const MAX_RETRIES = 5;
+        // ★ 双通道自动回退：先走隧道(3次)，失败自动切本地后端(3次)
+        const API_URLS = [
+            'https://gjt.guijiaotong.site/api/public/circuit/submit',  // 隧道
+            'http://localhost:8000/api/public/circuit/submit'          // 本地回退
+        ];
         let response = null;
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                document.getElementById('grading-message').textContent = '正在发送给 AI 评分(约 5-15 秒)...' + (attempt > 1 ? ' [重试 ' + (attempt - 1) + '/' + (MAX_RETRIES - 1) + ']' : '');
-                response = await fetch(API_URL, {
-                    method: 'POST',
-                    body: formData
-                });
-                console.log('[circuit-submit] ← HTTP', response.status, response.statusText, '| attempt', attempt);
-                if (response.ok || response.status === 422) break;
-                // 5xx 服务端错误也重试（后端可能重启中）
-                if (attempt < MAX_RETRIES) {
-                    console.warn('[circuit-submit] ⚠ HTTP', response.status, ', retrying...');
-                    await new Promise(r => setTimeout(r, 3000));
-                    continue;
-                }
-            } catch (fetchErr) {
-                console.warn('[circuit-submit] ✕ attempt', attempt, 'failed:', fetchErr.message);
-                if (attempt < MAX_RETRIES) {
-                    await new Promise(r => setTimeout(r, 3000));
-                } else {
-                    throw new Error('网络连接失败，请检查隧道是否正常运行。错误: ' + fetchErr.message);
+        let usedLocalFallback = false;
+
+        for (let urlIdx = 0; urlIdx < API_URLS.length; urlIdx++) {
+            const API_URL = API_URLS[urlIdx];
+            const MAX_RETRIES = (urlIdx === 0) ? 3 : 3; // 隧道3次+本地3次
+            const label = (urlIdx === 0) ? '隧道' : '本地';
+
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    document.getElementById('grading-message').textContent =
+                        '正在发送给 AI 评分(约 5-15 秒)...' +
+                        (urlIdx > 0 ? ' [本地模式]' : '') +
+                        (attempt > 1 ? ' [重试 ' + attempt + '/' + MAX_RETRIES + ']' : '');
+                    response = await fetch(API_URL, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    console.log('[circuit-submit] ← HTTP', response.status, response.statusText, '|', label, '| attempt', attempt);
+                    if (response.ok || response.status === 422) break; // 成功或业务错误
+                    if (attempt < MAX_RETRIES) {
+                        console.warn('[circuit-submit] ⚠ HTTP', response.status, ',', label, ', retrying...');
+                        await new Promise(r => setTimeout(r, 3000));
+                        continue;
+                    }
+                } catch (fetchErr) {
+                    console.warn('[circuit-submit] ✕', label, 'attempt', attempt, 'failed:', fetchErr.message);
+                    if (attempt < MAX_RETRIES) {
+                        await new Promise(r => setTimeout(r, 3000));
+                    } else if (urlIdx === 0 && urlIdx < API_URLS.length - 1) {
+                        // 隧道全失败 → 自动切本地
+                        console.warn('[circuit-submit] 🔄 隧道不通，自动切换到本地后端...');
+                        usedLocalFallback = true;
+                        break; // 跳出内层循环，进入下一个URL
+                    } else {
+                        throw new Error('网络连接失败（隧道和本地均不通）。错误: ' + fetchErr.message);
+                    }
                 }
             }
+            if (response && (response.ok || response.status === 422)) break; // 已成功，不尝试下一个URL
+        }
+
+        if (usedLocalFallback) {
+            console.info('[circuit-submit] ✅ 通过本地后端完成请求');
         }
 
         const resultJson = await response.json();
