@@ -98,7 +98,7 @@ function renderSidebar(components) {
         var isCustom = c.type.indexOf('custom-') === 0;
         var delBtn = '<button class="slot-del-btn" data-del-type="' + c.type + '" data-is-custom="' + isCustom + '" title="删除"><i class="fas fa-times"></i></button>';
         slot.innerHTML = delBtn +
-            '<img src="' + resolveAsset(c.image) + '" alt="' + c.name + '">' +
+            '<img src="' + resolveAsset(c.image) + '" alt="' + c.name + '" crossorigin="anonymous">' +
             '<div class="component-slot-name">' + c.name + '</div>';
         container.appendChild(slot);
     });
@@ -118,7 +118,7 @@ function renderTaskPanel(tasks) {
         var isCustom = t.id.indexOf('custom-') === 0;
         var delBtn = '<button class="slot-del-btn task-del-btn" data-del-task="' + t.id + '" data-is-custom="' + isCustom + '" title="删除"><i class="fas fa-times"></i></button>';
         slot.innerHTML = delBtn +
-            '<img src="' + resolveAsset(t.image) + '" alt="' + t.name + '">' +
+            '<img src="' + resolveAsset(t.image) + '" alt="' + t.name + '" crossorigin="anonymous">' +
             '<div class="task-slot-name">' + t.name + '</div>';
         container.appendChild(slot);
     });
@@ -425,7 +425,7 @@ let circuitVars = null;
 async function handleAiSubmit() {
     // 1. 检查是否选了任务
     if (!selectedTaskId) {
-        showToast('❌ 请先在右侧选择一个任务', 'error');
+        alert('请先在右侧选择一个任务');
         return;
     }
 
@@ -444,7 +444,7 @@ async function handleAiSubmit() {
             const cls = document.getElementById('submit-class-name').value.trim();
             const snm = document.getElementById('submit-student-name').value.trim();
             if (!sid || !cls || !snm) {
-                showToast('❌ 请把学号/班级/姓名都填上', 'error');
+                alert('请把学号/班级/姓名都填上');
                 return;
             }
             modal.style.display = 'none';
@@ -473,7 +473,7 @@ async function handleAiSubmit() {
             scale: 1,
             logging: false,
             useCORS: true,
-            allowTaint: true
+            allowTaint: false
         });
         const studentImage = canvas.toDataURL('image/png');
 
@@ -537,9 +537,9 @@ async function handleAiSubmit() {
         document.getElementById('score-analysis').textContent = result.analysis_text || '无详细评语';
         document.getElementById('score-modal').style.display = 'flex';
 
-        // AI 失败时的友好提示
+        // AI 失败时的友好提示（score 已在弹窗显示为 --）
         if (scoreVal === null) {
-            showToast('⚠ AI 评分服务暂时不可用,提交已记录到数据库,稍后由教师补评', 'warn');
+            console.warn('[circuit-submit] AI 评分未返回分数，提交已记录到数据库');
         }
 
         // 同时也触发本地的欢庆动效
@@ -553,7 +553,6 @@ async function handleAiSubmit() {
         const detail = (err && err.message) ? err.message : String(err);
         // ★ alert 强制弹出,保证用户能看到错误(不会像 toast 那样 2 秒消失)
         alert('❌ 提交失败\n\n' + detail + '\n\n→ 请按 F12 打开 Console,Network 标签里找 /api/public/circuit/submit 请求,把响应体截图发我');
-        showToast('❌ 提交失败:' + detail, 'error');
     }
 }
 
@@ -973,7 +972,7 @@ function initCircuitSimulator() {
         (window.__componentConfigs || []).forEach(function(cfg) {
             componentTypes[cfg.type] = {
                 name: cfg.name,
-                icon: '<img src="' + resolveAsset(cfg.image) + '" alt="' + cfg.name + '" style="width:' + cfg.imgW + 'px;height:' + cfg.imgH + 'px;object-fit:contain;border-radius:4px;">',
+                icon: '<img src="' + resolveAsset(cfg.image) + '" alt="' + cfg.name + '" crossorigin="anonymous" style="width:' + cfg.imgW + 'px;height:' + cfg.imgH + 'px;object-fit:contain;border-radius:4px;">',
                 width: cfg.width,
                 height: cfg.height,
                 portsTop: cfg.portsTop,
@@ -1321,7 +1320,7 @@ function initCircuitSimulator() {
         const detector = components.find(c => c.type === 'detector');
         if (!detector || !name || !imageSrc) return;
         detector.name = name;
-        detector.icon = '<img src="' + imageSrc + '" alt="' + name + '" style="width:120px;height:100px;object-fit:contain;border-radius:4px;">';
+        detector.icon = '<img src="' + imageSrc + '" alt="' + name + '" crossorigin="anonymous" style="width:120px;height:100px;object-fit:contain;border-radius:4px;">';
         const el = document.querySelector('[data-id="' + detector.id + '"]');
         if (el) el.remove();
         renderComponent(detector);
