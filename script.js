@@ -503,96 +503,96 @@ async function handleAiSubmit() {
         formData.append('student_image', studentImage);
         console.log('[circuit-submit] → POST /api/public/circuit/submit | student_id=', studentInfo.student_id, '| task_id=', selectedTaskId, '| student_image_size=', studentImage.length);
 
-        // ★ 双通道自动回退：先走隧道(3次)，失败自动切本地后端(3次)
-        const API_URLS = [
-            'https://gjt.guijiaotong.site/api/public/circuit/submit',  // 隧道
-            'http://localhost:8000/api/public/circuit/submit'          // 本地回退
+        // ★ 异步提交 + 轮询：提交是「瞬间」请求(后端立即落库返回 record_id),
+        //    评分在后端后台跑,前端轮询短 GET 拿结果。隧道只跑短请求,不再被 30s 长连接拖死。
+        document.getElementById('grading-message').textContent = '正在提交给 AI 评分(约 10-30 秒)...';
+
+        // 双通道地址(隧道优先,失败自动回退本地)
+        const BASE_URLS = [
+            'https://gjt.guijiaotong.site',  // 隧道
+            'http://localhost:8000'          // 本地回退
         ];
-        let response = null;
-        let usedLocalFallback = false;
-
-        for (let urlIdx = 0; urlIdx < API_URLS.length; urlIdx++) {
-            const API_URL = API_URLS[urlIdx];
-            const MAX_RETRIES = (urlIdx === 0) ? 3 : 3; // 隧道3次+本地3次
-            const label = (urlIdx === 0) ? '隧道' : '本地';
-
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                try {
-                    document.getElementById('grading-message').textContent =
-                        '正在发送给 AI 评分(约 5-15 秒)...' +
-                        (urlIdx > 0 ? ' [本地模式]' : '') +
-                        (attempt > 1 ? ' [重试 ' + attempt + '/' + MAX_RETRIES + ']' : '');
-                    response = await fetch(API_URL, {
-                        method: 'POST',
-                        body: formData
-                    });
-                    console.log('[circuit-submit] ← HTTP', response.status, response.statusText, '|', label, '| attempt', attempt);
-                    if (response.ok || response.status === 422) break; // 成功或业务错误
-                    if (attempt < MAX_RETRIES) {
-                        console.warn('[circuit-submit] ⚠ HTTP', response.status, ',', label, ', retrying...');
-                        await new Promise(r => setTimeout(r, 3000));
-                        continue;
-                    }
-                } catch (fetchErr) {
-                    console.warn('[circuit-submit] ✕', label, 'attempt', attempt, 'failed:', fetchErr.message);
-                    if (attempt < MAX_RETRIES) {
-                        await new Promise(r => setTimeout(r, 3000));
-                    } else if (urlIdx === 0 && urlIdx < API_URLS.length - 1) {
-                        // 隧道全失败 → 自动切本地
-                        console.warn('[circuit-submit] 🔄 隧道不通，自动切换到本地后端...');
-                        usedLocalFallback = true;
-                        break; // 跳出内层循环，进入下一个URL
-                    } else {
-                        throw new Error('网络连接失败（隧道和本地均不通）。错误: ' + fetchErr.message);
+        // 带回退的 fetch 助手:依次尝试每个 base,每个重试 2 次(仅网络错误/5xx)
+        async function fetchWithFallback(path, init) {
+            let lastErr = null;
+            for (let bi = 0; bi < BASE_URLS.length; bi++) {
+                const base = BASE_URLS[bi];
+                const label = bi === 0 ? '隧道' : '本地';
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    try {
+                        const resp = await fetch(base + path, init);
+                        // 成功 / 404 / 422 都算"拿到响应",交给上层处理;仅 5xx 重试
+                        if (resp.ok || resp.status === 404 || resp.status === 422) return { resp, label };
+                        if (attempt < 2) { await new Promise(r => setTimeout(r, 1500)); continue; }
+                        return { resp, label };
+                    } catch (e) {
+                        lastErr = e;
+                        console.warn('[fetchWithFallback] ✕', label, 'attempt', attempt, 'failed:', e.message);
+                        if (attempt < 2) { await new Promise(r => setTimeout(r, 1500)); continue; }
                     }
                 }
             }
-            if (response && (response.ok || response.status === 422)) break; // 已成功，不尝试下一个URL
+            throw lastErr || new Error('所有通道均不可达');
         }
 
-        if (usedLocalFallback) {
-            console.info('[circuit-submit] ✅ 通过本地后端完成请求');
-        }
+        // (a) 提交 → 拿 record_id
+        const submitResp = await fetchWithFallback('/api/public/circuit/submit', { method: 'POST', body: formData });
+        const submitJson = await submitResp.resp.json();
+        console.log('[circuit-submit] ← submit body:', submitJson);
+        if (!submitJson.success) throw new Error(submitJson.message || ('HTTP ' + submitResp.resp.status));
+        const recordId = submitJson.data && submitJson.data.record_id;
+        if (!recordId) throw new Error('后端未返回 record_id，提交可能未成功');
+        console.log('[circuit-submit] ✓ 已提交 record_id=', recordId, '| 通道=', submitResp.label);
 
-        const resultJson = await response.json();
-        console.log('[circuit-submit] ← body:', resultJson);
+        // (b) 轮询结果(短 GET,最多 25 次,每次等 2 秒 → 最长约 50 秒)
+        let result = null;
+        for (let i = 0; i < 25; i++) {
+            document.getElementById('grading-message').textContent =
+                'AI 评分中(约 10-30 秒)...' + (submitResp.label === '本地' ? ' [本地模式]' : '') + ' [' + (i + 1) + '/25]';
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const pollResp = await fetchWithFallback('/api/public/circuit/result?record_id=' + recordId, { method: 'GET' });
+                const pollJson = await pollResp.resp.json();
+                if (!pollJson.success) continue;
+                const d = pollJson.data || {};
+                if (d.status === 'done' || d.status === 'error') {
+                    result = d;
+                    break;
+                }
+            } catch (e) {
+                console.warn('[poll] 第' + (i + 1) + '次轮询失败:', e.message);
+            }
+        }
         gradingModal.style.display = 'none';
-
-        // FastAPI 包装格式: { success, message, data: {score, result_type, ...} }
-        if (!resultJson.success) {
-            throw new Error(resultJson.message || ('HTTP ' + response.status));
+        if (!result) {
+            throw new Error('评分超时（约 50 秒仍未完成）。提交已保存(record_id=' + recordId + ')，后端仍在评分，请稍后刷新页面重试；或检查隧道是否通畅。');
         }
-        const result = resultJson.data || {};
-
-        // ★ 关键诊断：如果后端返回了 record_id 但 score 是 null,说明桂教通 workflow 出了岔
-        if (typeof result.score !== 'number' && result.record_id) {
-            console.warn('[circuit-submit] ⚠ 后端说评分完成了(落库了),但 score 缺失。record_id=', result.record_id, '| raw answer=', result.analysis_text);
-        }
+        const r2 = result;
 
         // 7. 显示 AI 评分结果弹窗
         const scoreEl = document.getElementById('score-big-number');
-        const scoreVal = (typeof result.score === 'number') ? result.score : null;
+        const scoreVal = (typeof r2.score === 'number') ? r2.score : null;
         scoreEl.textContent = scoreVal !== null ? scoreVal : '--';
         scoreEl.style.color = scoreVal === null ? '#999'
                              : scoreVal >= 80 ? '#27ae60'
                              : scoreVal >= 60 ? '#f39c12'
                              : '#e74c3c';
         scoreEl.style.fontSize = scoreVal === null ? '48px' : '64px';
-        document.getElementById('score-task-type').textContent = result.result_type || selectedTaskId || '未指定';
+        document.getElementById('score-task-type').textContent = r2.result_type || selectedTaskId || '未指定';
 
-        if (result.error_category) {
+        if (r2.error_category) {
             document.getElementById('score-error-block').style.display = 'block';
-            document.getElementById('score-error-category').textContent = result.error_category;
+            document.getElementById('score-error-category').textContent = r2.error_category;
         } else {
             document.getElementById('score-error-block').style.display = 'none';
         }
 
-        document.getElementById('score-analysis').textContent = result.analysis_text || '无详细评语';
+        document.getElementById('score-analysis').textContent = r2.analysis_text || '无详细评语';
         document.getElementById('score-modal').style.display = 'flex';
 
         // AI 失败时的友好提示（score 已在弹窗显示为 --）
         if (scoreVal === null) {
-            console.warn('[circuit-submit] AI 评分未返回分数，提交已记录到数据库');
+            console.warn('[circuit-submit] AI 评分未返回分数,status=', r2.status, '| record_id=', recordId);
         }
 
         // 同时也触发本地的欢庆动效
